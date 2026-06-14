@@ -4,7 +4,7 @@ import fs from 'fs';
 import compression from 'compression';
 
 const app = express();
-app.use(compression()); // Compacta as respostas para o jogo carregar mais rápido no celular
+app.use(compression()); 
 app.use(cors());
 app.use(express.json());
 
@@ -129,7 +129,6 @@ app.post('/login', (req, res) => {
 
   let banco = lerBanco();
 
-  // Se o jogador não existir, realiza o cadastro inicial
   if (!banco.usuarios[jogadorId]) {
     const novoNick = nickname || `Player_${jogadorId.substring(0, 5)}`;
     
@@ -154,7 +153,6 @@ app.post('/login', (req, res) => {
     });
   }
 
-  // Se o jogador já existir, retorna os dados salvos
   return res.status(200).json({
     status: "logado",
     perfil: banco.usuarios[jogadorId]
@@ -162,37 +160,23 @@ app.post('/login', (req, res) => {
 });
 
 // ==========================================
-// ROTA 3: RETORNO SEGURO PARA TELA DE LOGIN DO FACEBOOK
+// ROTA 3: REDIRECIONAMENTO DIRETO (ANTI-TRAVAMENTO)
 // ==========================================
 app.get('/v3.1/dialog/oauth', (req, res) => {
-  // Retorna uma página em HTML com os códigos de fechamento amigáveis aceitos por SDKs e WebViews
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Autenticando...</title>
-        <script type="text/javascript">
-            // Força a inclusão do token de sucesso na URL hash capturada pelo jogo
-            window.location.hash = "access_token=foxyz_token_valido_999&expires_in=86400";
-            
-            // Avisa a janela pai e tenta forçar o encerramento da janela preta sem dar crash
-            setTimeout(function() {
-                if (window.opener) {
-                    window.opener.postMessage("access_token=foxyz_token_valido_999", "*");
-                }
-                window.close();
-            }, 500);
-        </script>
-    </head>
-    <body style="background:#0d0e12; color:#fff; font-family:sans-serif; text-align:center; padding-top:20%;">
-        <h3>Conectando ao FoxyzServer...</h3>
-    </body>
-    </html>
-  `);
+  // Pegamos a URL de redirecionamento que o próprio jogo enviou nos parâmetros (redirect_uri)
+  // Se não houver, usamos o padrão do Facebook para fechar janelas do SDK
+  const urlRetorno = req.query.redirect_uri || 'fbconnect://success';
+  
+  // Criamos os parâmetros de token necessários para o jogo achar que o Facebook validou tudo
+  const tokenFalso = "access_token=foxyz_token_valido_999&expires_in=86400&state=" + (req.query.state || "");
+
+  // Forçamos o redirecionamento direto via HTTP 302.
+  // O WebView do Android detecta o redirecionamento instantaneamente e fecha a janela, aplicando o login.
+  res.redirect(`${urlRetorno}#${tokenFalso}`);
 });
 
 // ==========================================
-// INICIALIZAÇÃO COM PORTA DINÂMICA
+// INICIALIZAÇÃO
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
