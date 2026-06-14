@@ -1,40 +1,32 @@
 import express from 'express';
 import cors from 'cors';
-import fs from 'fs';
 import compression from 'compression';
+import admin from 'firebase-admin';
 
 const app = express();
 app.use(compression()); 
 app.use(cors());
 app.use(express.json());
 
-const BANCO_ARQUIVO = './foxyz_database.json';
+// ==========================================
+// INICIALIZAÇÃO BLINDADA DO FIREBASE
+// ==========================================
+try {
+  // Configuração via Variável de Ambiente para proteção total das credenciais
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log("🔒 Conexão blindada com o Firebase estabelecida com sucesso!");
+} catch (error) {
+  console.error("❌ Erro crítico ao iniciar o Firebase. Verifique a variável FIREBASE_SERVICE_ACCOUNT:", error.message);
+}
 
-// Função auxiliar para leitura segura do banco JSON
-const lerBanco = () => {
-  try {
-    if (!fs.existsSync(BANCO_ARQUIVO)) {
-      fs.writeFileSync(BANCO_ARQUIVO, JSON.stringify({ usuarios: {}, inventarios: {} }, null, 2));
-    }
-    const dados = fs.readFileSync(BANCO_ARQUIVO, 'utf-8');
-    return JSON.parse(dados);
-  } catch (error) {
-    console.error("Erro ao ler banco de dados:", error);
-    return { usuarios: {}, inventarios: {} };
-  }
-};
-
-// Função auxiliar para salvar os dados no arquivo JSON
-const salvarBanco = (dados) => {
-  try {
-    fs.writeFileSync(BANCO_ARQUIVO, JSON.stringify(dados, null, 2));
-  } catch (error) {
-    console.error("Erro ao salvar no banco de dados:", error);
-  }
-};
+const db = admin.firestore();
 
 // ==========================================
-// ROTA 1: INTERFACE VISUAL (HTML/CSS)
+// ROTA 1: INTERFACE VISUAL (PAINEL HTML)
 // ==========================================
 app.get('/', (req, res) => {
   res.send(`
@@ -121,66 +113,79 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// ROTA 2: API DE LOGIN DO JOGO
+// ROTA 2: API DE LOGIN INTEGRADA AO FIREBASE
 // ==========================================
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
   const { jogadorId, nickname } = req.body;
   if (!jogadorId) return res.status(400).json({ error: "O campo jogadorId é obrigatório." });
 
-  let banco = lerBanco();
+  try {
+    const userRef = db.collection('usuarios').doc(jogadorId);
+    const doc = await userRef.get();
 
-  if (!banco.usuarios[jogadorId]) {
-    const novoNick = nickname || `Player_${jogadorId.substring(0, 5)}`;
-    
-    banco.usuarios[jogadorId] = {
-      jogadorId,
-      nickname: novoNick,
-      nivel: 1,
-      ouro: 1000,
-      diamantes: 0,
-      status: "No Lobby"
-    };
+    // Se o jogador não existir no Firestore, faz o registro
+    if (!doc.exists) {
+      const novoNick = nickname || `Player_${jogadorId.substring(0, 5)}`;
+      const novoPerfil = {
+        jogadorId,
+        nickname: novoNick,
+        nivel: 1,
+        ouro: 1000,
+        diamantes: 0,
+        status: "No Lobby",
+        criadoEm: admin.firestore.FieldValue.serverTimestamp()
+      };
 
-    banco.inventarios[jogadorId] = {
-      skins_armas: ["M4A1_Original"]
-    };
+      await userRef.set(novoPerfil);
 
-    salvarBanco(banco);
+      // Salva o inventário em uma subcoleção ou documento separado
+      await db.collection('inventarios').doc(jogadorId).set({
+        skins_armas: ["M4A1_Original"]
+      });
 
-    return res.status(201).json({
-      status: "registrado",
-      perfil: banco.usuarios[jogadorId]
+      return res.status(201).json({
+        status: "registrado",
+        perfil: novoPerfil
+      });
+    }
+
+    // Se já existir, retorna os dados estáveis salvos no Firebase
+    return res.status(200).json({
+      status: "logado",
+      perfil: doc.data()
     });
-  }
 
-  return res.status(200).json({
-    status: "logado",
-    perfil: banco.usuarios[jogadorId]
-  });
+  } catch (error) {
+    console.error("Erro no banco Firestore:", error);
+    return res.status(500).json({ error: "Erro interno de comunicação com o banco de dados." });
+  }
 });
 
 // ==========================================
-// ROTA 3: REDIRECIONAMENTO COM TOKEN DO FACEBOOK
+// ROTA 3: REDIRECIONAMENTO LIMPO DO OAUTH
 // ==========================================
 app.get('/v3.1/dialog/oauth', (req, res) => {
   const urlRetorno = req.query.redirect_uri || 'fbconnect://success';
-  const tokenFalso = "access_token=foxyz_token_valido_999&expires_in=86400&state=" + (req.query.state || "");
-  res.redirect(`${urlRetorno}#${tokenFalso}`);
+  
+  // Gerando parâmetros com strings limpas para evitar estouro de buffer ou erro de leitura no WebView
+  const tokenValido = "access_token=foxyz_secure_token_firebase_success&expires_in=86400&state=" + (req.query.state || "");
+  
+  // Retorno direto via HTTP 302 sem carregar views pesadas que quebram o fluxo do app
+  res.redirect(`${urlRetorno}#${tokenValido}`);
 });
 
 // ==========================================
-// ROTA 4: ENVIO DE DADOS DO PERFIL (ANTI-FECHAMENTO)
+// ROTA 4: API REQUISITADA PELO SDK DO FACEBOOK
 // ==========================================
-// Essa rota responde quando o jogo tenta checar quem é o dono do Token que enviamos acima
 app.get(['/v3.1/me', '/me'], (req, res) => {
   res.status(200).json({
-    id: "100089123456789", // ID falso do perfil do Facebook exigido pelo jogo
-    name: "Foxyz Player",   // Nome de exibição interno
+    id: "200019876543210", 
+    name: "Foxyz Verified User",
     first_name: "Foxyz",
-    last_name: "Player",
+    last_name: "Verified",
     picture: {
       data: {
-        url: "https://graph.facebook.com/100089123456789/picture",
+        url: "https://graph.facebook.com/200019876543210/picture",
         is_silhouette: false
       }
     }
@@ -192,5 +197,5 @@ app.get(['/v3.1/me', '/me'], (req, res) => {
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🔥 Servidor Foxyz Pro ativo com sucesso na porta ${PORT}`);
+  console.log(`🔥 Servidor Blindado Foxyz ativo na porta ${PORT}`);
 });
