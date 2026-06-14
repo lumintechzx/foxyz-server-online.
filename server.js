@@ -160,22 +160,33 @@ app.post('/login', (req, res) => {
 });
 
 // ==========================================
-// ROTA 3: BYPASS DO ERRO DE DOMÍNIO DO FACEBOOK
+// ROTA 3: RETORNO COMPATÍVEL COM WEBVIEW DO JOGO
 // ==========================================
 app.get('/v3.1/dialog/oauth', (req, res) => {
-  // Se o jogo esperar um redirecionamento automático (OAuth callback) para fechar a tela,
-  // nós mandamos o fluxo de volta informando credenciais de sucesso fictícias.
-  if (req.query.redirect_uri) {
-    const urlSucesso = req.query.redirect_uri;
-    return res.redirect(`${urlSucesso}#access_token=foxyz_fake_token_sucesso&expires_in=86400`);
-  }
-
-  // Se for uma requisição de fundo direta, responde com JSON de sucesso instantâneo
-  res.status(200).json({
-    access_token: "foxyz_fake_token_sucesso",
-    token_type: "Bearer",
-    expires_in: 86400
-  });
+  // Retorna uma página em branco com scripts de fechamento automotivo comuns em SDKs
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Autenticando...</title>
+        <script type="text/javascript">
+            // Força o envio dos dados de acesso para a janela pai (o jogo)
+            window.location.hash = "access_token=foxyz_token_valido_999&expires_in=86400";
+            
+            // Tenta fechar a janela automaticamente de várias maneiras para evitar travar em preto
+            setTimeout(function() {
+                if (window.opener) {
+                    window.opener.postMessage("access_token=foxyz_token_valido_999", "*");
+                }
+                window.close();
+            }, 500);
+        </script>
+    </head>
+    <body style="background:#0d0e12; color:#fff; font-family:sans-serif; text-align:center; padding-top:20%;">
+        <h3>Conectando ao FoxyzServer...</h3>
+    </body>
+    </html>
+  `);
 });
 
 // ==========================================
