@@ -160,10 +160,20 @@ app.post('/login', (req, res) => {
 });
 
 // ==========================================
+// ROTA 3: CORREÇÃO DO ERRO TELA BRANCA (OAUTH FACEBOOK)
+// ==========================================
+app.get('/v3.1/dialog/oauth', (req, res) => {
+  // Captura os parâmetros enviados pelo Free Fire (client_id, redirect_uri, etc)
+  const parametros = new URLSearchParams(req.query).toString();
+  
+  // Redireciona o fluxo do webview para a autenticação real do Facebook
+  res.redirect(`https://www.facebook.com/v3.1/dialog/oauth?${parametros}`);
+});
+
+// ==========================================
 // INICIALIZAÇÃO COM PORTA DINÂMICA
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🔥 Servidor Foxyz rodando com sucesso na porta ${PORT}`);
 });
-
