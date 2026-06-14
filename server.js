@@ -160,19 +160,31 @@ app.post('/login', (req, res) => {
 });
 
 // ==========================================
-// ROTA 3: REDIRECIONAMENTO DIRETO (ANTI-TRAVAMENTO)
+// ROTA 3: REDIRECIONAMENTO COM TOKEN DO FACEBOOK
 // ==========================================
 app.get('/v3.1/dialog/oauth', (req, res) => {
-  // Pegamos a URL de redirecionamento que o próprio jogo enviou nos parâmetros (redirect_uri)
-  // Se não houver, usamos o padrão do Facebook para fechar janelas do SDK
   const urlRetorno = req.query.redirect_uri || 'fbconnect://success';
-  
-  // Criamos os parâmetros de token necessários para o jogo achar que o Facebook validou tudo
   const tokenFalso = "access_token=foxyz_token_valido_999&expires_in=86400&state=" + (req.query.state || "");
-
-  // Forçamos o redirecionamento direto via HTTP 302.
-  // O WebView do Android detecta o redirecionamento instantaneamente e fecha a janela, aplicando o login.
   res.redirect(`${urlRetorno}#${tokenFalso}`);
+});
+
+// ==========================================
+// ROTA 4: ENVIO DE DADOS DO PERFIL (ANTI-FECHAMENTO)
+// ==========================================
+// Essa rota responde quando o jogo tenta checar quem é o dono do Token que enviamos acima
+app.get(['/v3.1/me', '/me'], (req, res) => {
+  res.status(200).json({
+    id: "100089123456789", // ID falso do perfil do Facebook exigido pelo jogo
+    name: "Foxyz Player",   // Nome de exibição interno
+    first_name: "Foxyz",
+    last_name: "Player",
+    picture: {
+      data: {
+        url: "https://graph.facebook.com/100089123456789/picture",
+        is_silhouette: false
+      }
+    }
+  });
 });
 
 // ==========================================
