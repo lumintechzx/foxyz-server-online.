@@ -160,14 +160,22 @@ app.post('/login', (req, res) => {
 });
 
 // ==========================================
-// ROTA 3: CORREÇÃO DO ERRO TELA BRANCA (OAUTH FACEBOOK)
+// ROTA 3: BYPASS DO ERRO DE DOMÍNIO DO FACEBOOK
 // ==========================================
 app.get('/v3.1/dialog/oauth', (req, res) => {
-  // Captura os parâmetros enviados pelo Free Fire (client_id, redirect_uri, etc)
-  const parametros = new URLSearchParams(req.query).toString();
-  
-  // Redireciona o fluxo do webview para a autenticação real do Facebook
-  res.redirect(`https://www.facebook.com/v3.1/dialog/oauth?${parametros}`);
+  // Se o jogo esperar um redirecionamento automático (OAuth callback) para fechar a tela,
+  // nós mandamos o fluxo de volta informando credenciais de sucesso fictícias.
+  if (req.query.redirect_uri) {
+    const urlSucesso = req.query.redirect_uri;
+    return res.redirect(`${urlSucesso}#access_token=foxyz_fake_token_sucesso&expires_in=86400`);
+  }
+
+  // Se for uma requisição de fundo direta, responde com JSON de sucesso instantâneo
+  res.status(200).json({
+    access_token: "foxyz_fake_token_sucesso",
+    token_type: "Bearer",
+    expires_in: 86400
+  });
 });
 
 // ==========================================
