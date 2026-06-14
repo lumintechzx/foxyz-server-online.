@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
+import compression from 'compression';
 
 const app = express();
+app.use(compression()); // Compacta as respostas para o jogo carregar mais rápido no celular
 app.use(cors());
 app.use(express.json());
 
@@ -160,20 +162,20 @@ app.post('/login', (req, res) => {
 });
 
 // ==========================================
-// ROTA 3: RETORNO COMPATÍVEL COM WEBVIEW DO JOGO
+// ROTA 3: RETORNO SEGURO PARA TELA DE LOGIN DO FACEBOOK
 // ==========================================
 app.get('/v3.1/dialog/oauth', (req, res) => {
-  // Retorna uma página em branco com scripts de fechamento automotivo comuns em SDKs
+  // Retorna uma página em HTML com os códigos de fechamento amigáveis aceitos por SDKs e WebViews
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
         <title>Autenticando...</title>
         <script type="text/javascript">
-            // Força o envio dos dados de acesso para a janela pai (o jogo)
+            // Força a inclusão do token de sucesso na URL hash capturada pelo jogo
             window.location.hash = "access_token=foxyz_token_valido_999&expires_in=86400";
             
-            // Tenta fechar a janela automaticamente de várias maneiras para evitar travar em preto
+            // Avisa a janela pai e tenta forçar o encerramento da janela preta sem dar crash
             setTimeout(function() {
                 if (window.opener) {
                     window.opener.postMessage("access_token=foxyz_token_valido_999", "*");
@@ -194,5 +196,5 @@ app.get('/v3.1/dialog/oauth', (req, res) => {
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🔥 Servidor Foxyz rodando com sucesso na porta ${PORT}`);
+  console.log(`🔥 Servidor Foxyz Pro ativo com sucesso na porta ${PORT}`);
 });
