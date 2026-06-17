@@ -9,23 +9,25 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// INICIALIZAÇÃO BLINDADA DO FIREBASE
+// INICIALIZAÇÃO DO FIREBASE (COM TRATAMENTO DE ERRO)
 // ==========================================
+let db = null;
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-    console.log("🔒 Conexão blindada com o Firebase estabelecida com sucesso!");
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log("🔒 Firebase conectado!");
+    }
+    db = admin.firestore();
   } else {
-    console.warn("⚠️ FIREBASE_SERVICE_ACCOUNT não encontrada. O Firestore não funcionará corretamente.");
+    console.warn("⚠️ Variável FIREBASE_SERVICE_ACCOUNT não encontrada.");
   }
 } catch (error) {
-  console.error("❌ Erro crítico ao iniciar o Firebase:", error.message);
+  console.error("❌ Erro ao iniciar Firebase:", error.message);
 }
-
-const db = admin.apps.length ? admin.firestore() : null;
 
 // ==========================================
 // ROTA 1: INTERFACE VISUAL (PAINEL HTML)
@@ -96,8 +98,8 @@ app.get('/', (req, res) => {
 
                     messageBox.className = "success-msg";
                     messageBox.innerText = data.status === "registrado" 
-                        ? \`Sucesso! Conta criada para \${data.perfil.nickname}!\`
-                        : \`Bem-vindo de volta \${data.perfil.nickname}!\`;
+                        ? "Sucesso! Conta criada!"
+                        : "Bem-vindo de volta!";
                     messageBox.style.display = "block";
                 } catch (error) {
                     messageBox.className = "error-msg";
@@ -115,86 +117,48 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// ROTA 2: API DE LOGIN INTEGRADA AO FIREBASE
+// ROTA 2: API DE LOGIN
 // ==========================================
 app.post('/login', async (req, res) => {
   const { jogadorId, nickname } = req.body;
   if (!jogadorId) return res.status(400).json({ error: "O campo jogadorId é obrigatório." });
 
-  if (!db) return res.status(500).json({ error: "Firestore não inicializado corretamente." });
+  if (!db) {
+    // Modo Offline/Demo se o Firebase não estiver configurado
+    return res.status(200).json({ status: "logado", perfil: { nickname: nickname || "Player" } });
+  }
 
   try {
     const userRef = db.collection('usuarios').doc(jogadorId);
     const doc = await userRef.get();
 
     if (!doc.exists) {
-      const novoNick = nickname || `Player_${jogadorId.substring(0, 5)}`;
       const novoPerfil = {
         jogadorId,
-        nickname: novoNick,
-        nivel: 1,
-        ouro: 1000,
-        diamantes: 0,
-        status: "No Lobby",
-        criadoEm: admin.firestore.FieldValue.serverTimestamp()
+        nickname: nickname || "Novo Jogador",
+        criadoEm: new Date()
       };
-
       await userRef.set(novoPerfil);
-      await db.collection('inventarios').doc(jogadorId).set({
-        skins_armas: ["M4A1_Original"]
-      });
-
-      return res.status(201).json({
-        status: "registrado",
-        perfil: novoPerfil
-      });
+      return res.status(201).json({ status: "registrado", perfil: novoPerfil });
     }
-
-    return res.status(200).json({
-      status: "logado",
-      perfil: doc.data()
-    });
-
+    return res.status(200).json({ status: "logado", perfil: doc.data() });
   } catch (error) {
-    console.error("Erro no banco Firestore:", error);
-    return res.status(500).json({ error: "Erro interno de comunicação com o banco de dados." });
+    return res.status(500).json({ error: "Erro no banco de dados." });
   }
 });
 
 // ==========================================
-// ROTA 3: REDIRECIONAMENTO OAUTH (CORREÇÃO V2.5)
+// ROTA 3: CORREÇÃO OAUTH (V2.5 e V3.1)
 // ==========================================
-// Esta rota captura chamadas para v2.5, v3.1 e versões genéricas do OAuth
 app.get(['/v2.5/dialog/oauth', '/v3.1/dialog/oauth', '/dialog/oauth'], (req, res) => {
-  console.log("Recebida requisição OAuth Versão:", req.path);
-  
   const urlRetorno = req.query.redirect_uri || 'fbconnect://success';
   const state = req.query.state || "";
-  
-  // Criamos o fragmento de URL que o app espera para validar o login
-  const tokenFragment = \`access_token=foxyz_secure_token_firebase_success&expires_in=86400&state=\${state}\`;
-  
-  // Realiza o redirecionamento 302
-  // Se o app estiver em WebView, ele deve interceptar este redirecionamento
-  res.redirect(\`\${urlRetorno}#\${tokenFragment}\`);
+  const token = "access_token=foxyz_token_success&expires_in=86400&state=" + state;
+  res.redirect(urlRetorno + "#" + token);
 });
 
-// ==========================================
-// ROTA 4: API REQUISITADA PELO SDK DO FACEBOOK
-// ==========================================
 app.get(['/v2.5/me', '/v3.1/me', '/me'], (req, res) => {
-  res.status(200).json({
-    id: "200019876543210", 
-    name: "Foxyz Verified User",
-    first_name: "Foxyz",
-    last_name: "Verified",
-    picture: {
-      data: {
-        url: "https://graph.facebook.com/200019876543210/picture",
-        is_silhouette: false
-      }
-    }
-  });
+  res.status(200).json({ id: "12345", name: "Foxyz User" });
 });
 
 // ==========================================
@@ -202,5 +166,5 @@ app.get(['/v2.5/me', '/v3.1/me', '/me'], (req, res) => {
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(\`🔥 Servidor Foxyz Corrigido ativo na porta \${PORT}\`);
+  console.log("🔥 Servidor rodando na porta " + PORT);
 });
